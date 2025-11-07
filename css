@@ -1,0 +1,58 @@
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    font-family: 'Arial', sans-serif;
+    background-color: #282c34;
+    color: #f0f0f0;
+    text-align: center;
+    overflow: hidden; /* 스크롤바 방지 */
+}
+
+.game-container {
+    padding: 20px;
+    border-radius: 10px;
+    background-color: #3a4049;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+h1 {
+    color: #61dafb;
+    margin-bottom: 30px;
+}
+
+.circle {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%; /* 원형 */
+    background-color: #4CAF50; /* 초록색 */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 3em;
+    font-weight: bold;
+    color: white;
+    cursor: pointer; /* 클릭 가능한 모양 */
+    transition: transform 0.1s ease-out, background-color 0.2s ease-in-out;
+    user-select: none; /* 숫자 드래그 방지 */
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.circle:hover {
+    background-color: #45a049; /* 호버 시 색상 변경 */
+}
+
+.circle:active {
+    transform: scale(0.95); /* 클릭 시 약간 축소 */
+}
+
+p {
+    margin-top: 30px;
+    font-size: 0.9em;
+    color: #aaa;
+}
