@@ -3,13 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>클릭 카운터</title>
-    <link rel="stylesheet" href="style.css">
+    <title>캔버스 점프 게임</title>
+    <!-- Tailwind CSS for basic container styling and responsiveness -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 커스텀 CSS: 게임 화면 중앙 정렬 및 스타일 */
+        body {
+            background-color: #f7f7f7;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        #gameCanvas {
+            border: 2px solid #333;
+            background-color: #ffffff<;
+            /* 캔버스 자체의 그림자 효과 */
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        .container {
+            font-family: 'Inter', sans-serif;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+    </style>
 </head>
 <body>
-    <div class="click-area" id="clickArea">
-        <span id="counter">0</span>
+    <div class="container bg-white p-2 md:p-4">
+        <!-- 게임 캔버스 (게임이 실제로 그려지는 영역) -->
+        <canvas id="gameCanvas" width="600" height="300"></canvas>
     </div>
-    <script src="script.js"></script>
+
+    <script>
+        // 캔버스 및 렌더링 컨텍스트 설정
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // ==== 게임 상수 설정 ====
+        const GAME_WIDTH = canvas.width;
+        const GAME_HEIGHT = canvas.height;
+        const GROUND_HEIGHT = 20; // 바닥 선의 두께
+        const GROUND_Y = GAME_HEIGHT - GROUND_HEIGHT; // 바닥의 Y좌표
+        const PLAYER_RADIUS = 15; // 플레이어 원의 반지름
+        const JUMP_VELOCITY = -15; // 점프 속도 (위로 이동)
+        const GRAVITY = 1; // 중력 값
+        const GAME_SPEED = 5; // 배경 스크롤 속도
+        const OBSTACLE_COLOR = '#88c0d0'; // 장애물 색상
+        const PLAYER_COLOR = '#5e81ac'; // 플레이어 색상
+        const GROUND_COLOR = '#3b4252'; // 바닥 색상
+
+        // ==== 게임 상태 변수 ====
+        let gameState = 'STOPPED'; // 'STOPPED', 'RUNNING', 'GAME_OVER'
+        let score = 0;
+        let lastTime = 0;
+        let obstacleTimer = 0; // 장애물 생성 타이머
+        const OBSTACLE_INTERVAL_MIN = 80; // 최소 인터벌 프레임 수
+        const OBSTACLE_INTERVAL_MAX = 180; // 최대 인터벌 프레임 수
+
+        // ==== 플레이어 객체 ====
+        let player = {
+            x: 50, // 화면 왼쪽에서 시작
+            y: GROUND_Y - PLAYER_RADIUS,
+            velocityY: 0, // 수직 속도
+            isJumping: false,
+        };
+
+        // ==== 장애물 목록 ====
+        let obstacles = [];
+
+        // ==== 초기화 및 재시작 함수 ====
+        function initializeGame() {
+            gameState = 'STOPPED';
+            score = 0;
+            player.x = 50;
+            player.y = GROUND_Y - PLAYER_RADIUS;
+            player.velocityY = 0;
+            player.isJumping = false;
+            obstacles = [];
+            obstacleTimer = Math.floor(Math.random() * (OBSTACLE_INTERVAL_MAX - OBSTACLE_INTERVAL_MIN)) + OBSTACLE_INTERVAL_MIN;
+            draw(); // 초기 정지 화면 그리기
+        }
+
+        // ==== 게임 시작 함수 ====
+        function startGame() {
+            if (gameState !== 'RUNNING') {
+                gameState = 'RUNNING';
+                lastTime = performance.now();
+                gameLoop(lastTime);
+            }
+        }
+
+        // ==== 점프 함수 ====
+        function jump() {
+            if (!player.isJumping) {
+                player.velocityY = JUMP_VELOCITY;
+                player.isJumping = true;
+            }
+        }
+
+        // ==== 장애물 생성 함수 ====
+        function createObstacle() {
+            const width = 20 + Math.random() * 20; // 장애물 너비
+            const height = 20 + Math.random() * 30; // 장애물 높이
+            obstacles.push({
+                x: GAME_WIDTH, // 화면 오른쪽 끝에서 생성
+                y: GROUND_Y - height,
+                width: width,
+                height: height,
+            });
+        }
+
+        // ==== 충돌 감지 함수 ====
+        function checkCollision() {
+            for (let i = 0; i < obstacles.length; i++) {
+                const obs = obstacles[i];
+                
+                // 플레이어의 바운딩 박스 (원을 사각형으로 근사)
+                const playerLeft = player.x - PLAYER_RADIUS;
+                const playerRight = player.x + PLAYER_RADIUS;
+                const playerTop = player.y - PLAYER_RADIUS;
+                const playerBottom = player.y + PLAYER_RADIUS;
+
+                // 장애물의 바운딩 박스
+                const obsLeft = obs.x;
+                const obsRight = obs.x + obs.width;
+                const obsTop = obs.y;
+                const obsBottom = obs.y + obs.height;
+
+                // 충돌 조건 확인 (사각형 AABB 충돌 감지)
+                if (playerRight > obsLeft && playerLeft < obsRight && playerBottom > obsTop && playerTop < obsBottom) {
+                    gameState = 'GAME_OVER';
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // ==== 업데이트 루프 (게임 로직 처리) ====
+        function update() {
+            if (gameState !== 'RUNNING') return;
+
+            // 1. 플레이어 상태 업데이트 (중력 적용)
+            player.velocityY += GRAVITY;
+            player.y += player.velocityY;
+
+            // 바닥 충돌 처리
+            if (player.y + PLAYER_RADIUS > GROUND_Y) {
+                player.y = GROUND_Y - PLAYER_RADIUS;
+                player.velocityY = 0;
+                player.isJumping = false;
+            }
+            
+            // 2. 장애물 이동 및 제거
+            for (let i = 0; i < obstacles.length; i++) {
+                obstacles[i].x -= GAME_SPEED; // 오른쪽에서 왼쪽으로 이동
+            }
+            // 화면 밖으로 나간 장애물 제거
+            obstacles = obstacles.filter(obs => obs.x + obs.width > 0);
+
+            // 3. 장애물 생성 타이머
+            obstacleTimer--;
+            if (obstacleTimer <= 0) {
+                createObstacle();
+                // 다음 장애물 생성 시간 설정 (무작위)
+                obstacleTimer = Math.floor(Math.random() * (OBSTACLE_INTERVAL_MAX - OBSTACLE_INTERVAL_MIN)) + OBSTACLE_INTERVAL_MIN;
+            }
+
+            // 4. 충돌 감지
+            if (checkCollision()) {
+                // 게임 오버 상태로 전환됨
+                return; 
+            }
+
+            // 5. 점수 업데이트 (프레임 단위)
+            score++;
+        }
+
+        // ==== 렌더링 루프 (화면에 그리기) ====
+        function draw() {
+            // 화면 지우기
+            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // 1. 바닥 그리기 (두꺼운 선)
+            ctx.fillStyle = GROUND_COLOR;
+            ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GROUND_HEIGHT); 
+
+            // 2. 장애물 그리기 (네모)
+            ctx.fillStyle = OBSTACLE_COLOR;
+            obstacles.forEach(obs => {
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            });
+
+            // 3. 플레이어 그리기 (원)
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, PLAYER_RADIUS, 0, Math.PI * 2);
+            ctx.fillStyle = PLAYER_COLOR;
+            ctx.fill();
+            ctx.closePath();
+            
+            // 4. 점수 표시
+            ctx.fillStyle = '#333333';
+            ctx.font = '20px Inter, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(`시간: ${Math.floor(score / 60)}초`, 10, 30); // 60프레임 = 1초 근사
+
+            // 5. 게임 상태 메시지 표시
+            if (gameState === 'STOPPED') {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '30px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('스페이스바를 눌러 시작하세요', GAME_WIDTH / 2, GAME_HEIGHT / 2);
+            } else if (gameState === 'GAME_OVER') {
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '40px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 20);
+                ctx.font = '20px Inter, sans-serif';
+                ctx.fillText(`기록: ${Math.floor(score / 60)}초`, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20);
+                ctx.fillText('스페이스바를 눌러 다시 시작', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50);
+            }
+        }
+
+        // ==== 메인 게임 루프 ====
+        function gameLoop(timestamp) {
+            // 시간 기반 업데이트는 생략하고 단순 프레임 기반 업데이트 사용 (간단한 게임에 적합)
+            update();
+            draw();
+
+            if (gameState === 'RUNNING') {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // ==== 키보드 입력 처리 ====
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') { // 스페이스바
+                e.preventDefault(); // 스크롤 방지
+                
+                if (gameState === 'STOPPED') {
+                    // 정지 상태에서 스페이스바: 게임 시작
+                    startGame();
+                } else if (gameState === 'RUNNING') {
+                    // 실행 중 상태에서 스페이스바: 점프
+                    jump();
+                } else if (gameState === 'GAME_OVER') {
+                    // 게임 오버 상태에서 스페이스바: 재시작
+                    initializeGame();
+                    startGame();
+                }
+            }
+        });
+
+        // 페이지 로드 시 게임 초기화
+        window.onload = initializeGame;
+    </script>
 </body>
 </html>
