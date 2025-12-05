@@ -2,8 +2,9 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>3-Way Ultimate Tetris</title>
+<title>3-Way 고정판 테트리스</title>
 <style>
+    /* (CSS는 이전 코드와 동일하게 적용합니다. 생략) */
     :root {
         --bg-color: #202028;
         --text-color: #fff;
@@ -51,9 +52,9 @@
     }
     
     #main-canvas {
-        /* 3방향 회전을 위해 정사각형 캔버스 사용 */
-        width: 400px;
-        height: 400px;
+        /* 3개 판을 배치하기 위해 큰 캔버스 사용 */
+        width: 600px; 
+        height: 600px;
     }
 
     .ui-box {
@@ -94,7 +95,7 @@
     }
     #restart-btn:hover { background: #d900bd; }
     #t-spin-msg {
-        position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
         font-size: 2rem; color: yellow; font-weight: bold;
         opacity: 0; transition: opacity 0.3s; pointer-events: none;
     }
@@ -102,7 +103,7 @@
 </head>
 <body>
 
-    <h1>3-Way Tetris</h1>
+    <h1>3-Way Fixed Tetris</h1>
 
     <div class="main-container">
         <div class="side-panel">
@@ -121,7 +122,7 @@
         </div>
 
         <div style="position: relative;">
-             <canvas id="main-canvas" width="400" height="400"></canvas>
+            <canvas id="main-canvas" width="600" height="600"></canvas>
             <div id="t-spin-msg">T-SPIN!</div>
             <div id="game-over">
                 <h2>GAME OVER</h2>
@@ -136,9 +137,11 @@
                 <canvas id="next-canvas" class="mini-canvas" width="80" height="80"></canvas>
             </div>
             <div class="ui-box controls-info">
-                <p>⬅️⬇️➡️ : 이동</p>
+                <p>현재 방향: <span id="current-dir">Top</span></p>
+                <p>좌우 방향키: 수평 이동</p>
+                <p>아래 방향키: 중력 방향 하드드롭</p>
                 <p>⬆️ / Z : 회전</p>
-                <p>Space : 하드드롭</p>
+                <p>Space : 바로 놓기</p>
                 <p>C / Shift : 홀드</p>
             </div>
         </div>
@@ -155,49 +158,56 @@ const nextContext = nextCanvas.getContext('2d');
 const holdCanvas = document.getElementById('hold-canvas');
 const holdContext = holdCanvas.getContext('2d');
 
-const GRID_SIZE = 20; // 3방향 회전을 위해 20x20 정사각형 그리드 사용
-const SCALE = canvas.width / GRID_SIZE;
-context.scale(SCALE, SCALE);
+const COLS = 10;
+const ROWS = 20;
+const BLOCK_SIZE = 20; // 픽셀 크기
+
+// 캔버스 스케일 조정 (하나의 블록 크기를 픽셀로 설정)
+context.scale(1, 1);
 nextContext.scale(20, 20);
 holdContext.scale(20, 20);
 
-// 블록 색상 및 모양 정의
-const colors = [
-    null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF'
-];
+// 블록 색상 및 모양 정의 (이전 코드와 동일)
+const colors = [null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF'];
 const piecesStr = 'ILJOTSZ';
 
 // 게임 상태 변수
-let arena = createMatrix(GRID_SIZE, GRID_SIZE);
-let dropCounter = 0;
-let dropInterval = 1000;
-let lastTime = 0;
 let isGameOver = false;
 let score = 0;
 let level = 1;
-let bag = []; // 7-bag 시스템을 위한 배열
+let bag = []; 
 let nextPieceType = null;
 let holdPieceType = null;
 let canHold = true;
-let lastMoveWasRotate = false; // T-spin 감지용
+let dropCounter = 0;
+let dropInterval = 1000;
+let lastTime = 0;
 
-// 3방향 관련 변수
-const directions = ['top', 'right', 'left']; // 순서: 위 -> 오른쪽 -> 왼쪽
+// 3방향 관련 변수 (핵심)
+const directions = ['top', 'right', 'left']; 
 let turnIndex = 0;
 let currentDir = directions[0];
+
+// 3개의 독립된 게임판 (10x20)
+const arenas = {
+    'top': createMatrix(COLS, ROWS),
+    'right': createMatrix(COLS, ROWS),
+    'left': createMatrix(COLS, ROWS)
+};
 
 const player = {
     pos: {x: 0, y: 0},
     matrix: null,
-    type: null
+    type: null,
+    dir: 'top', // 현재 블록이 속한 방향
 };
 
 // ===========================
-// 2. 핵심 헬퍼 함수들
+// 2. 핵심 헬퍼 함수들 (재정의)
 // ===========================
 
-// 블록 모양 생성
 function createPiece(type) {
+    // T, I, O, L, J, S, Z 블록 정의
     switch (type) {
         case 'I': return [[0,0,0,0],[2,2,2,2],[0,0,0,0],[0,0,0,0]];
         case 'L': return [[0,0,5],[5,5,5],[0,0,0]];
@@ -209,40 +219,13 @@ function createPiece(type) {
     }
 }
 
-// 매트릭스 생성 (게임 보드)
 function createMatrix(w, h) {
     const matrix = [];
     while (h--) matrix.push(new Array(w).fill(0));
     return matrix;
 }
 
-// 충돌 감지
-function collide(arena, player) {
-    const m = player.matrix;
-    const o = player.pos;
-    for (let y = 0; y < m.length; ++y) {
-        for (let x = 0; x < m[y].length; ++x) {
-            if (m[y][x] !== 0 &&
-               (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-// 매트릭스 병합 (블록 고정)
-function merge(arena, player) {
-    player.matrix.forEach((row, y) => {
-        row.forEach((value, x) => {
-            if (value !== 0) {
-                arena[y + player.pos.y][x + player.pos.x] = value;
-            }
-        });
-    });
-}
-
-// 매트릭스 회전
+// 매트릭스 회전 (시계 방향)
 function rotate(matrix, dir) {
     for (let y = 0; y < matrix.length; ++y) {
         for (let x = 0; x < y; ++x) {
@@ -253,190 +236,274 @@ function rotate(matrix, dir) {
     else matrix.reverse();
 }
 
-// 7-Bag 시스템 (블록 랜덤 생성)
-function getNextPiece() {
-    if (bag.length === 0) {
-        bag = piecesStr.split('').sort(() => Math.random() - 0.5);
-    }
-    return bag.pop();
-}
-
-// T-Spin 감지
-function checkTSpin(movedX, movedY) {
-    if (player.type !== 'T' || !lastMoveWasRotate) return false;
-
-    let corners = 0;
-    // T 블록 중심 기준 4개의 모서리 확인
-    const checks = [[0,0], [2,0], [0,2], [2,2]]; 
-    checks.forEach(([cx, cy]) => {
-        const ax = player.pos.x + cx;
-        const ay = player.pos.y + cy;
-        // 벽이거나 다른 블록이 있으면 카운트
-        if (ax < 0 || ax >= GRID_SIZE || ay >= GRID_SIZE || (arena[ay] && arena[ay][ax])) {
-            corners++;
+// 충돌 감지 (현재 활성화된 arena 사용)
+function collide(arena, player) {
+    const m = player.matrix;
+    const o = player.pos;
+    for (let y = 0; y < m.length; ++y) {
+        for (let x = 0; x < m[y].length; ++x) {
+            if (m[y][x] !== 0) {
+                const ay = y + o.y;
+                const ax = x + o.x;
+                // 바닥이나 벽 충돌
+                if (ax < 0 || ax >= COLS || ay >= ROWS) return true;
+                // 다른 블록 충돌
+                if (arena[ay] && arena[ay][ax] !== 0) return true;
+            }
         }
-    });
-
-    // 3개 이상의 모서리가 막혀있으면 T-Spin 인정
-    if (corners >= 3) {
-        showTSpinEffect();
-        return true;
     }
     return false;
 }
 
-// T-Spin 효과 표시
-function showTSpinEffect() {
-    const msg = document.getElementById('t-spin-msg');
-    msg.style.opacity = 1;
-    setTimeout(() => { msg.style.opacity = 0; }, 1000);
-}
-
-// ===========================
-// 3. 게임 로직 및 렌더링
-// ===========================
-
-// 줄 삭제 및 점수 계산
-function arenaSweep() {
-    let rowCount = 0;
-    outer: for (let y = arena.length - 1; y >= 0; --y) {
-        for (let x = 0; x < arena[y].length; ++x) {
-            if (arena[y][x] === 0) continue outer;
-        }
-        // 줄이 꽉 찼을 때
-        const row = arena.splice(y, 1)[0].fill(0);
-        
-        // *** 3방향 핵심 로직: 턴에 따라 줄이 사라지는 방향 결정 ***
-        if (currentDir === 'top') {
-             arena.unshift(row); // 위에서 아래로 (기존 방식)
-             ++y;
-        } else if (currentDir === 'right') {
-            arena.push(row); // 오른쪽에서 왼쪽으로 밀림 (시각적)
-             // y는 그대로 두어 다음 줄 검사
-        } else if (currentDir === 'left') {
-             arena.unshift(row); // 왼쪽에서 오른쪽으로 밀림 (시각적)
-             ++y;
-        }
-        rowCount++;
-    }
-
-    if (rowCount > 0) {
-        let tSpin = checkTSpin(0,0);
-        // 점수 계산 (T-spin 보너스 포함)
-        let baseScore = [0, 100, 300, 500, 800][rowCount] || 0;
-        if (tSpin) baseScore *= (rowCount + 1); // 단순 계산
-        
-        score += baseScore * level;
-        updateScoreBox();
-        // 레벨업 (500점 마다)
-        level = Math.floor(score / 500) + 1;
-        dropInterval = Math.max(100, 1000 - (level-1) * 100);
-    }
-    lastMoveWasRotate = false;
-}
-
-
-// 메인 그리기 함수 (캔버스 회전 적용)
-function draw() {
-    context.fillStyle = '#000';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-
-    // 캔버스 상태 저장 (회전 전)
-    context.save();
-    
-    // *** 3방향 핵심: 캔버스 전체를 턴에 맞춰 회전 ***
-    // 캔버스 중심으로 이동 -> 회전 -> 다시 원위치
-    context.translate(GRID_SIZE/2, GRID_SIZE/2);
-    if (currentDir === 'right') context.rotate(-Math.PI / 2);
-    else if (currentDir === 'left') context.rotate(Math.PI / 2);
-    context.translate(-GRID_SIZE/2, -GRID_SIZE/2);
-
-    // 회전된 상태에서 아레나와 플레이어 그리기
-    drawMatrix(context, arena, {x: 0, y: 0});
-    drawMatrix(context, player.matrix, player.pos);
-
-    // 캔버스 상태 복구
-    context.restore();
-}
-
-// 보조 캔버스 그리기 (Next/Hold)
-function drawMiniCanvas(ctx, pieceType) {
-    ctx.fillStyle = '#333';
-    ctx.fillRect(0, 0, 4, 4);
-    if (pieceType) {
-        const matrix = createPiece(pieceType);
-        // 중앙 정렬을 위한 오프셋 계산
-        const offsetX = (4 - matrix[0].length) / 2;
-        const offsetY = (4 - matrix.length) / 2;
-        drawMatrix(ctx, matrix, {x: offsetX, y: offsetY});
-    }
-}
-
-// 행렬 그리기 유틸리티
-function drawMatrix(ctx, matrix, offset) {
-    matrix.forEach((row, y) => {
+// 매트릭스 병합
+function merge(arena, player) {
+    player.matrix.forEach((row, y) => {
         row.forEach((value, x) => {
             if (value !== 0) {
-                ctx.fillStyle = colors[value];
-                ctx.fillRect(x + offset.x, y + offset.y, 1, 1);
-                ctx.lineWidth = 0.05;
-                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-                ctx.strokeRect(x + offset.x, y + offset.y, 1, 1);
+                arena[y + player.pos.y][x + player.pos.x] = value;
             }
         });
     });
 }
 
+// 줄 삭제 및 이동 (방향별 로직)
+function arenaSweep(arenaKey) {
+    const arena = arenas[arenaKey];
+    let rowCount = 0;
+
+    if (arenaKey === 'top') {
+        // 1. 일반적인 테트리스 (위 -> 아래, 행 삭제)
+        outer: for (let y = ROWS - 1; y >= 0; --y) {
+            for (let x = 0; x < COLS; ++x) {
+                if (arena[y][x] === 0) continue outer;
+            }
+            const row = arena.splice(y, 1)[0].fill(0);
+            arena.unshift(row); // 윗부분으로 밀어넣기 (아래로 당겨짐)
+            ++y;
+            rowCount++;
+        }
+    } else {
+        // 2. 좌우 방향 (왼쪽/오른쪽 -> 중앙, 열 삭제 및 밀기)
+        for (let x = 0; x < COLS; ++x) {
+            let colFull = true;
+            for (let y = 0; y < ROWS; ++y) {
+                if (arena[y][x] === 0) {
+                    colFull = false;
+                    break;
+                }
+            }
+
+            if (colFull) {
+                // 열 삭제 및 블록 밀기
+                for (let j = x; j > 0; --j) {
+                    for (let i = 0; i < ROWS; ++i) {
+                        arena[i][j] = arena[i][j - 1];
+                    }
+                }
+                for (let i = 0; i < ROWS; ++i) {
+                     // 가장자리 빈 열 채우기 (새 열이 들어오는 방향)
+                    arena[i][0] = 0; 
+                }
+                rowCount++;
+            }
+        }
+    }
+
+    if (rowCount > 0) {
+        score += rowCount * 100 * level;
+        updateScoreBox();
+        level = Math.floor(score / 500) + 1;
+        dropInterval = Math.max(100, 1000 - (level - 1) * 100);
+    }
+}
 
 // ===========================
-// 4. 플레이어 조작 및 게임 흐름
+// 3. 렌더링 (고정된 판에 회전된 블록 그리기)
+// ===========================
+
+// 메인 그리기 함수
+function draw() {
+    context.fillStyle = '#202028';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // 3개의 독립된 판을 캔버스에 배치
+    drawArena(arenas['top'], {x: 10 * BLOCK_SIZE, y: 0 * BLOCK_SIZE}, 0, 'Top');
+    drawArena(arenas['right'], {x: 40 * BLOCK_SIZE, y: 20 * BLOCK_SIZE}, 90 * Math.PI / 180, 'Right');
+    drawArena(arenas['left'], {x: 20 * BLOCK_SIZE, y: 40 * BLOCK_SIZE}, -90 * Math.PI / 180, 'Left');
+    
+    // 활성화된 블록 그리기
+    drawPlayer();
+}
+
+// 개별 Arena 그리기
+function drawArena(arena, offset, rotation, key) {
+    context.save();
+    
+    // 중앙점 이동 및 회전
+    context.translate(offset.x, offset.y);
+    context.rotate(rotation);
+    
+    // 캔버스 중앙에 오도록 추가 보정 (회전된 보드를 정렬)
+    let translateX = 0;
+    let translateY = 0;
+    if (key === 'Right') {
+        translateX = COLS * BLOCK_SIZE;
+    } else if (key === 'Left') {
+        translateY = ROWS * BLOCK_SIZE;
+    }
+    context.translate(translateX, translateY);
+
+
+    // 배경 및 경계선
+    context.fillStyle = '#111';
+    context.fillRect(0, 0, COLS * BLOCK_SIZE, ROWS * BLOCK_SIZE);
+    context.strokeStyle = '#555';
+    context.strokeRect(0, 0, COLS * BLOCK_SIZE, ROWS * BLOCK_SIZE);
+    
+    // 고정된 블록 그리기
+    drawMatrix(context, arena, {x: 0, y: 0}, BLOCK_SIZE);
+
+    context.restore();
+}
+
+// 현재 플레이어 블록 그리기
+function drawPlayer() {
+    const arenaKey = player.dir;
+    const offset = {x: 0, y: 0};
+    let rotation = 0;
+    
+    // 위치 및 회전 설정 (drawArena와 동일)
+    if (arenaKey === 'top') {
+        offset.x = 10 * BLOCK_SIZE;
+        offset.y = 0 * BLOCK_SIZE;
+    } else if (arenaKey === 'right') {
+        offset.x = 40 * BLOCK_SIZE;
+        offset.y = 20 * BLOCK_SIZE;
+        rotation = 90 * Math.PI / 180;
+    } else if (arenaKey === 'left') {
+        offset.x = 20 * BLOCK_SIZE;
+        offset.y = 40 * BLOCK_SIZE;
+        rotation = -90 * Math.PI / 180;
+    }
+
+    context.save();
+    context.translate(offset.x, offset.y);
+    context.rotate(rotation);
+    
+    // 캔버스 중앙 보정 (drawArena와 동일)
+    let translateX = 0;
+    let translateY = 0;
+    if (arenaKey === 'right') {
+        translateX = COLS * BLOCK_SIZE;
+    } else if (arenaKey === 'left') {
+        translateY = ROWS * BLOCK_SIZE;
+    }
+    context.translate(translateX, translateY);
+
+    // 플레이어 블록을 해당 캔버스 위치에 그리기
+    const pos = player.pos;
+    drawMatrix(context, player.matrix, pos, BLOCK_SIZE);
+
+    context.restore();
+}
+
+// 행렬 그리기 유틸리티
+function drawMatrix(ctx, matrix, offset, scale) {
+    matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+            if (value !== 0) {
+                ctx.fillStyle = colors[value];
+                ctx.fillRect((x + offset.x) * scale, (y + offset.y) * scale, scale, scale);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                ctx.strokeRect((x + offset.x) * scale, (y + offset.y) * scale, scale, scale);
+            }
+        });
+    });
+}
+
+// ===========================
+// 4. 플레이어 조작 및 게임 흐름 (방향별 조작 적용)
 // ===========================
 
 function playerDrop() {
-    player.pos.y++;
+    const arena = arenas[player.dir];
+    
+    // 중력 방향으로 이동
+    if (player.dir === 'top') player.pos.y++;
+    else if (player.dir === 'right') player.pos.x--; // 오른쪽 판은 왼쪽으로 떨어짐 (X-)
+    else if (player.dir === 'left') player.pos.x++; // 왼쪽 판은 오른쪽으로 떨어짐 (X+)
+    
     if (collide(arena, player)) {
-        player.pos.y--;
+        // 충돌 시 한 칸 되돌리기
+        if (player.dir === 'top') player.pos.y--;
+        else if (player.dir === 'right') player.pos.x++;
+        else if (player.dir === 'left') player.pos.x--;
+        
         merge(arena, player);
-        arenaSweep();
-        playerReset(); // 다음 턴으로 넘어감
+        arenaSweep(player.dir);
+        playerReset(); // 다음 턴, 다음 방향으로 전환
     }
     dropCounter = 0;
-    lastMoveWasRotate = false;
-}
-
-function playerHardDrop() {
-    while (!collide(arena, player)) {
-        player.pos.y++;
-    }
-    player.pos.y--;
-    merge(arena, player);
-    arenaSweep();
-    playerReset();
 }
 
 function playerMove(dir) {
-    player.pos.x += dir;
-    if (collide(arena, player)) {
-        player.pos.x -= dir;
+    const arena = arenas[player.dir];
+    const oldX = player.pos.x;
+    const oldY = player.pos.y;
+    
+    // 조작: 좌우 방향키는 항상 수평 이동 (중력에 수직)
+    if (player.dir === 'top') {
+        player.pos.x += dir; // X축 이동
+    } else if (player.dir === 'right' || player.dir === 'left') {
+        player.pos.y += dir; // Y축 이동
     }
-    lastMoveWasRotate = false;
+    
+    if (collide(arena, player)) {
+        player.pos.x = oldX;
+        player.pos.y = oldY;
+    }
 }
 
 function playerRotate(dir) {
-    const pos = player.pos.x;
-    let offset = 1;
+    const arena = arenas[player.dir];
+    const oldX = player.pos.x;
+    const oldY = player.pos.y;
+    // T-Spin 감지를 위한 T-Spin 관련 로직은 생략되었습니다. (복잡도 한계)
+    
     rotate(player.matrix, dir);
-    // 벽 차기 (Wall Kick) - 단순 구현
-    while (collide(arena, player)) {
-        player.pos.x += offset;
-        offset = -(offset + (offset > 0 ? 1 : -1));
-        if (offset > player.matrix[0].length) {
-            rotate(player.matrix, -dir);
-            player.pos.x = pos;
-            return;
-        }
+    if (collide(arena, player)) {
+         // 충돌 시 벽차기 대신 단순 되돌리기
+        rotate(player.matrix, -dir);
+        player.pos.x = oldX;
+        player.pos.y = oldY;
     }
-    lastMoveWasRotate = true;
+}
+
+function playerHardDrop() {
+    const arena = arenas[player.dir];
+    while (!collide(arena, player)) {
+        // 중력 방향으로 계속 이동
+        if (player.dir === 'top') player.pos.y++;
+        else if (player.dir === 'right') player.pos.x--;
+        else if (player.dir === 'left') player.pos.x++;
+    }
+    // 마지막 이동 되돌리기
+    if (player.dir === 'top') player.pos.y--;
+    else if (player.dir === 'right') player.pos.x++;
+    else if (player.dir === 'left') player.pos.x--;
+
+    merge(arena, player);
+    arenaSweep(player.dir);
+    playerReset();
+}
+
+function getNextPiece() {
+    // 7-Bag 시스템
+    if (bag.length === 0) {
+        bag = piecesStr.split('').sort(() => Math.random() - 0.5);
+    }
+    return bag.pop();
 }
 
 function playerHold() {
@@ -444,40 +511,50 @@ function playerHold() {
     
     if (holdPieceType === null) {
         holdPieceType = player.type;
-        playerReset(false); // 턴 넘기지 않고 새 블록
+        playerReset(false); 
     } else {
         const temp = player.type;
         player.type = holdPieceType;
         holdPieceType = temp;
         player.matrix = createPiece(player.type);
+        // 홀드 후 블록 위치 재설정
         player.pos.y = 0;
-        player.pos.x = (GRID_SIZE / 2 | 0) - (player.matrix[0].length / 2 | 0);
+        player.pos.x = (COLS / 2 | 0) - (player.matrix[0].length / 2 | 0);
     }
     canHold = false;
-    drawMiniCanvas(holdContext, holdPieceType);
+    drawMiniCanvas(holdContext, holdPieceType, 1);
 }
 
-// 블록 리셋 및 턴 변경 (핵심)
+// 블록 리셋 및 턴 변경 (다음 방향으로 순환)
 function playerReset(changeTurn = true) {
     if (nextPieceType === null) nextPieceType = getNextPiece();
     
     player.type = nextPieceType;
-    player.matrix = createPiece(player.type);
     nextPieceType = getNextPiece();
-    drawMiniCanvas(nextContext, nextPieceType);
-
-    // 위치 초기화 (항상 상단 중앙에서 시작 - 캔버스가 회전하므로)
-    player.pos.y = 0;
-    player.pos.x = (GRID_SIZE / 2 | 0) - (player.matrix[0].length / 2 | 0);
     
     if (changeTurn) {
-        currentDir = directions[turnIndex % 3];
         turnIndex++;
+        player.dir = directions[turnIndex % 3]; // 방향 순환
         canHold = true;
+        document.getElementById('current-dir').innerText = player.dir.toUpperCase();
+    }
+    
+    // 블록 매트릭스 생성 및 방향에 따라 90도 회전
+    player.matrix = createPiece(player.type);
+    if (player.dir !== 'top') {
+        // 좌우 방향 블록은 90도 회전된 형태로 나옴
+        rotate(player.matrix, 1); 
     }
 
-    // 게임 오버 체크
-    if (collide(arena, player)) {
+    // 위치 초기화 (항상 상단 중앙에서 시작)
+    player.pos.y = 0;
+    player.pos.x = (COLS / 2 | 0) - (player.matrix[0].length / 2 | 0);
+
+    drawMiniCanvas(nextContext, nextPieceType, player.dir === 'top' ? 1 : 1);
+    drawMiniCanvas(holdContext, holdPieceType, 1);
+
+    // 게임 오버 체크 (새 블록이 나올 자리에 이미 블록이 있다면)
+    if (collide(arenas[player.dir], player)) {
         gameOver();
     }
 }
@@ -489,7 +566,10 @@ function gameOver() {
 }
 
 function restartGame() {
-    arena.forEach(row => row.fill(0));
+    // 모든 판 초기화
+    for (const key in arenas) {
+        arenas[key].forEach(row => row.fill(0));
+    }
     score = 0;
     level = 1;
     turnIndex = 0;
@@ -499,7 +579,7 @@ function restartGame() {
     isGameOver = false;
     dropInterval = 1000;
     updateScoreBox();
-    drawMiniCanvas(holdContext, null);
+    drawMiniCanvas(holdContext, null, 1);
     document.getElementById('game-over').style.display = 'none';
     playerReset();
     update();
@@ -531,13 +611,13 @@ document.addEventListener('keydown', event => {
     if (isGameOver) return;
     
     switch(event.keyCode) {
-        case 37: playerMove(-1); break; // Left
-        case 39: playerMove(1); break;  // Right
-        case 40: playerDrop(); break;   // Down
+        case 37: playerMove(-1); break; // Left (수평 이동)
+        case 39: playerMove(1); break;  // Right (수평 이동)
+        case 40: playerHardDrop(); break; // Down (중력 방향 하드 드롭)
         case 38: playerRotate(1); break; // Up (Rotate CW)
         case 90: playerRotate(-1); break; // Z (Rotate CCW)
-        case 32: playerHardDrop(); break; // Space
-        case 67: case 16: playerHold(); break; // C or Shift
+        case 32: playerHardDrop(); break; // Space (하드 드롭)
+        case 67: case 16: playerHold(); break; // C or Shift (홀드)
     }
 });
 
