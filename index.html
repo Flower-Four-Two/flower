@@ -2,9 +2,9 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>3-Way Cross Tetris</title>
+<title>3-Way T-Shape Tetris</title>
 <style>
-    /* CSS는 이전 코드와 동일하게 적용 (생략) */
+    /* (CSS는 이전 코드와 동일하게 적용합니다. 생략) */
     :root {
         --bg-color: #202028;
         --text-color: #fff;
@@ -23,7 +23,7 @@
         margin: 0;
         user-select: none;
     }
-    /* 기타 UI 요소 스타일링 (생략) */
+
     h1 {
         margin: 0 0 15px 0;
         font-size: 2rem;
@@ -52,7 +52,7 @@
     }
     
     #main-canvas {
-        /* 50x40 그리드 크기 (500px x 400px) */
+        /* 50x40 그리드 크기에 맞춰 설정 */
         width: 500px; 
         height: 400px;
     }
@@ -82,16 +82,7 @@
         backdrop-filter: blur(2px);
     }
     #game-over h2 { font-size: 2.5rem; color: red; margin-bottom: 10px; }
-    #game-over p { font-size: 1.5rem; margin-bottom: 20px; }
-    #restart-btn {
-        padding: 10px 20px;
-        font-size: 1.2rem;
-        background: var(--accent-color);
-        color: white;
-        border: none;
-        border-radius: 5px;
-        cursor: pointer;
-    }
+
     #t-spin-msg {
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
         font-size: 2rem; color: yellow; font-weight: bold;
@@ -101,7 +92,7 @@
 </head>
 <body>
 
-    <h1>3-Way Cross Tetris</h1>
+    <h1>3-Way T-Shape Tetris (ㅗ)</h1>
 
     <div class="main-container">
         <div class="side-panel">
@@ -161,7 +152,7 @@ const GRID_COLS = 50;
 const GRID_ROWS = 40;
 const BLOCK_SIZE = 10; // 1블록당 10px
 
-context.scale(BLOCK_SIZE, BLOCK_SIZE);
+context.scale(BLOCK_SIZE, BLOCK_SIZE); // 캔버스 좌표계를 블록 단위로 변경
 nextContext.scale(20, 20);
 holdContext.scale(20, 20);
 
@@ -179,12 +170,11 @@ let dropCounter = 0;
 let dropInterval = 1000;
 let lastTime = 0;
 
-// 3방향 관련 변수
 const directions = ['top', 'right', 'left']; 
 let turnIndex = 0;
 let currentDir = directions[0];
 
-// -1은 맵 바깥쪽 벽, 0은 빈 공간
+// -1: 벽(유효하지 않은 영역), 0: 빈 공간(유효한 영역)
 const WALL = -1; 
 let arena = createMatrix(GRID_COLS, GRID_ROWS, WALL);
 
@@ -192,7 +182,7 @@ const player = {
     pos: {x: 0, y: 0},
     matrix: null,
     type: null,
-    dir: 'top', // 현재 블록이 속한 방향
+    dir: 'top', 
 };
 
 // ===========================
@@ -212,7 +202,7 @@ function createPiece(type) {
     }
 }
 
-// 50x40 매트릭스 생성 및 유효 영역 설정 (-1은 벽)
+// 50x40 매트릭스 생성 및 'ㅗ' 모양 유효 영역 설정 (0)
 function createMatrix(w, h, fillValue) {
     const matrix = [];
     for (let y = 0; y < h; ++y) {
@@ -220,7 +210,7 @@ function createMatrix(w, h, fillValue) {
     }
     
     // 유효 영역 (0으로 채우기)
-    // 1. Top Arm (10x40): X=20~29, Y=0~39
+    // 1. Top Arm (10x40): X=20~29, Y=0~39 (실제 30 길이 + 10 코어)
     for (let y = 0; y < 40; ++y) {
         for (let x = 20; x < 30; ++x) {
             matrix[y][x] = 0;
@@ -261,7 +251,7 @@ function collide(arena, player) {
                 const ax = x + o.x;
                 const ay = y + o.y;
 
-                // 맵 밖 충돌 (Top, Bottom, Left, Right)
+                // 맵 밖 충돌 (가장자리)
                 if (ax < 0 || ax >= GRID_COLS || ay < 0 || ay >= GRID_ROWS) return true;
                 
                 // 벽(-1) 또는 다른 블록(>0) 충돌
@@ -272,7 +262,7 @@ function collide(arena, player) {
     return false;
 }
 
-function merge(arena, player) {
+function merge(arena, player) { /* ... 매트릭스 병합 로직 (이전과 동일) ... */
     player.matrix.forEach((row, y) => {
         row.forEach((value, x) => {
             if (value !== 0) {
@@ -286,7 +276,7 @@ function merge(arena, player) {
 function arenaSweep() {
     let linesCleared = 0;
 
-    // 1. Top Arm (X=20~29, Y=0~39) - 행(Row) 클리어
+    // 1. Top Arm (X=20~29, Y=0~39) - 행(Row) 클리어 (중력: 아래)
     for (let y = 39; y >= 0; --y) {
         let isFull = true;
         for (let x = 20; x < 30; ++x) {
@@ -295,19 +285,15 @@ function arenaSweep() {
         if (isFull) {
             // 행 삭제 및 블록 내리기
             for (let j = y; j > 0; --j) {
-                for (let x = 20; x < 30; ++x) {
-                    arena[j][x] = arena[j-1][x];
-                }
+                for (let x = 20; x < 30; ++x) { arena[j][x] = arena[j-1][x]; }
             }
-            for (let x = 20; x < 30; ++x) {
-                arena[0][x] = 0; // 최상단 행 비우기
-            }
+            for (let x = 20; x < 30; ++x) { arena[0][x] = 0; }
             linesCleared++;
-            y++; // 현재 행을 다시 검사
+            y++; 
         }
     }
     
-    // 2. Right Arm (X=30~49, Y=30~39) - 열(Column) 클리어 (좌측으로 밀기)
+    // 2. Right Arm (X=30~49, Y=30~39) - 열(Column) 클리어 (중력: 왼쪽 -> 밀기: 오른쪽)
     for (let x = 49; x >= 30; --x) {
         let isFull = true;
         for (let y = 30; y < 40; ++y) {
@@ -316,19 +302,15 @@ function arenaSweep() {
         if (isFull) {
             // 열 삭제 및 블록 좌측으로 밀기
             for (let j = x; j > 30; --j) {
-                for (let y = 30; y < 40; ++y) {
-                    arena[y][j] = arena[y][j-1];
-                }
+                for (let y = 30; y < 40; ++y) { arena[y][j] = arena[y][j-1]; }
             }
-            for (let y = 30; y < 40; ++y) {
-                arena[y][30] = 0; // 30번째 열 비우기 (중앙쪽)
-            }
+            for (let y = 30; y < 40; ++y) { arena[y][30] = 0; }
             linesCleared++;
-            x++; // 현재 열을 다시 검사
+            x++; 
         }
     }
 
-    // 3. Left Arm (X=0~19, Y=30~39) - 열(Column) 클리어 (우측으로 밀기)
+    // 3. Left Arm (X=0~19, Y=30~39) - 열(Column) 클리어 (중력: 오른쪽 -> 밀기: 왼쪽)
     for (let x = 0; x < 20; ++x) {
         let isFull = true;
         for (let y = 30; y < 40; ++y) {
@@ -337,19 +319,15 @@ function arenaSweep() {
         if (isFull) {
             // 열 삭제 및 블록 우측으로 밀기
             for (let j = x; j < 19; ++j) {
-                for (let y = 30; y < 40; ++y) {
-                    arena[y][j] = arena[y][j+1];
-                }
+                for (let y = 30; y < 40; ++y) { arena[y][j] = arena[y][j+1]; }
             }
-            for (let y = 30; y < 40; ++y) {
-                arena[y][19] = 0; // 19번째 열 비우기 (중앙쪽)
-            }
+            for (let y = 30; y < 40; ++y) { arena[y][19] = 0; }
             linesCleared++;
-            x--; // 현재 열을 다시 검사
+            x--; 
         }
     }
 
-    if (linesCleared > 0) {
+    if (linesCleared > 0) { /* ... 점수 및 레벨 업데이트 (이전과 동일) ... */
         score += linesCleared * 100 * level;
         updateScoreBox();
         level = Math.floor(score / 500) + 1;
@@ -358,22 +336,22 @@ function arenaSweep() {
 }
 
 // ===========================
-// 3. 렌더링
+// 3. 렌더링 (유효 영역만 그리기)
 // ===========================
 
 function draw() {
-    context.fillStyle = '#000'; // 배경색
+    context.fillStyle = '#000'; 
     context.fillRect(0, 0, GRID_COLS, GRID_ROWS); 
     
-    // 배경 (WALL 영역 어둡게)
+    // 배경 (WALL 영역 어둡게, 유효 영역 밝게)
     for (let y = 0; y < GRID_ROWS; ++y) {
         for (let x = 0; x < GRID_COLS; ++x) {
             if (arena[y][x] === WALL) {
-                context.fillStyle = '#111';
-                context.fillRect(x, y, 1, 1);
+                context.fillStyle = '#111'; // 벽 영역 (검은색 배경)
             } else if (arena[y][x] === 0) {
-                // 유효 영역 배경
-                context.fillStyle = '#1e1e1e';
+                context.fillStyle = '#1e1e1e'; // 유효 영역 (어두운 회색)
+            }
+            if (arena[y][x] === WALL || arena[y][x] === 0) {
                 context.fillRect(x, y, 1, 1);
             }
         }
@@ -386,7 +364,7 @@ function draw() {
     drawMatrix(context, player.matrix, player.pos, 1);
 }
 
-// 행렬 그리기 유틸리티
+// 행렬 그리기 유틸리티 (이전과 동일)
 function drawMatrix(ctx, matrix, offset, scale) {
     matrix.forEach((row, y) => {
         row.forEach((value, x) => {
@@ -405,14 +383,12 @@ function drawMatrix(ctx, matrix, offset, scale) {
 // 4. 플레이어 조작 및 게임 흐름 (방향별 조작 적용)
 // ===========================
 
-function playerDrop() {
-    // 중력 방향으로 이동
+function playerDrop() { /* ... 드롭 로직 (이전과 동일) ... */
     if (player.dir === 'top') player.pos.y++;
-    else if (player.dir === 'right') player.pos.x--; // 오른쪽 판은 왼쪽으로 떨어짐 (X-)
-    else if (player.dir === 'left') player.pos.x++; // 왼쪽 판은 오른쪽으로 떨어짐 (X+)
+    else if (player.dir === 'right') player.pos.x--;
+    else if (player.dir === 'left') player.pos.x++;
     
     if (collide(arena, player)) {
-        // 충돌 시 한 칸 되돌리기
         if (player.dir === 'top') player.pos.y--;
         else if (player.dir === 'right') player.pos.x++;
         else if (player.dir === 'left') player.pos.x--;
@@ -424,15 +400,14 @@ function playerDrop() {
     dropCounter = 0;
 }
 
-function playerMove(dir) {
+function playerMove(dir) { /* ... 수평 이동 로직 (이전과 동일) ... */
     const oldX = player.pos.x;
     const oldY = player.pos.y;
     
-    // 조작: 좌우 방향키는 항상 중력에 수직인 방향으로 이동
     if (player.dir === 'top') {
-        player.pos.x += dir; // X축 이동 (좌우)
+        player.pos.x += dir; 
     } else if (player.dir === 'right' || player.dir === 'left') {
-        player.pos.y += dir; // Y축 이동 (상하)
+        player.pos.y += dir; 
     }
     
     if (collide(arena, player)) {
@@ -441,14 +416,12 @@ function playerMove(dir) {
     }
 }
 
-function playerHardDrop() {
+function playerHardDrop() { /* ... 하드 드롭 로직 (이전과 동일) ... */
     while (!collide(arena, player)) {
-        // 중력 방향으로 계속 이동
         if (player.dir === 'top') player.pos.y++;
         else if (player.dir === 'right') player.pos.x--;
         else if (player.dir === 'left') player.pos.x++;
     }
-    // 마지막 이동 되돌리기
     if (player.dir === 'top') player.pos.y--;
     else if (player.dir === 'right') player.pos.x++;
     else if (player.dir === 'left') player.pos.x--;
@@ -456,6 +429,18 @@ function playerHardDrop() {
     merge(arena, player);
     arenaSweep();
     playerReset();
+}
+
+function playerRotate(dir) { /* ... 회전 로직 (이전과 동일) ... */
+    const oldX = player.pos.x;
+    const oldY = player.pos.y;
+    
+    rotate(player.matrix, dir);
+    if (collide(arena, player)) {
+        rotate(player.matrix, -dir);
+        player.pos.x = oldX;
+        player.pos.y = oldY;
+    }
 }
 
 function getNextPiece() { /* ... 7-Bag 시스템 로직 (이전과 동일) ... */
@@ -476,12 +461,10 @@ function playerHold() { /* ... 홀드 로직 (이전과 동일) ... */
         player.type = holdPieceType;
         holdPieceType = temp;
         player.matrix = createPiece(player.type);
-        // 홀드 후 블록 위치 재설정
-        player.pos.y = 0;
-        player.pos.x = (GRID_COLS / 2 | 0) - (player.matrix[0].length / 2 | 0);
     }
     canHold = false;
-    drawMiniCanvas(holdContext, holdPieceType);
+    // 블록 위치 재설정은 playerReset에서 처리
+    playerReset(false); 
 }
 
 // 블록 리셋 및 턴 변경 (다음 방향으로 순환)
@@ -502,13 +485,13 @@ function playerReset(changeTurn = true) {
     
     // 시작 위치 및 블록 회전 (중요!)
     if (player.dir === 'top') {
-        player.pos.x = 24; player.pos.y = 0; // Top Arm 중앙 (X=20~29)
+        player.pos.x = 24; player.pos.y = 0; // Top Arm 중앙
     } else if (player.dir === 'right') {
         player.pos.x = 49; player.pos.y = 34; // Right Arm 최우측
-        rotate(player.matrix, 1);
+        rotate(player.matrix, 1); // 90도 회전된 형태로 시작
     } else if (player.dir === 'left') {
         player.pos.x = 0; player.pos.y = 34; // Left Arm 최좌측
-        rotate(player.matrix, 1);
+        rotate(player.matrix, 1); // 90도 회전된 형태로 시작
     }
 
     drawMiniCanvas(nextContext, nextPieceType);
@@ -520,14 +503,14 @@ function playerReset(changeTurn = true) {
     }
 }
 
-function gameOver() {
+function gameOver() { /* ... 게임 오버 로직 (이전과 동일) ... */
     isGameOver = true;
     document.getElementById('final-score').innerText = score;
     document.getElementById('game-over').style.display = 'flex';
 }
 
-function restartGame() {
-    arena = createMatrix(GRID_COLS, GRID_ROWS, WALL); // 판 전체 초기화
+function restartGame() { /* ... 게임 재시작 로직 (이전과 동일) ... */
+    arena = createMatrix(GRID_COLS, GRID_ROWS, WALL); 
     score = 0;
     level = 1;
     turnIndex = 0;
@@ -543,13 +526,13 @@ function restartGame() {
     update();
 }
 
-function updateScoreBox() {
+function updateScoreBox() { /* ... 점수 업데이트 로직 (이전과 동일) ... */
     document.getElementById('score').innerText = score;
     document.getElementById('level').innerText = level;
 }
 
 // 게임 루프
-function update(time = 0) {
+function update(time = 0) { /* ... 게임 루프 로직 (이전과 동일) ... */
     if (isGameOver) return;
 
     const deltaTime = time - lastTime;
@@ -565,12 +548,12 @@ function update(time = 0) {
 }
 
 // 키보드 입력
-document.addEventListener('keydown', event => {
+document.addEventListener('keydown', event => { /* ... 키 입력 로직 (이전과 동일) ... */
     if (isGameOver) return;
     
     switch(event.keyCode) {
-        case 37: playerMove(-1); break; // Left (수평 이동)
-        case 39: playerMove(1); break;  // Right (수평 이동)
+        case 37: playerMove(-1); break; // Left 
+        case 39: playerMove(1); break;  // Right
         case 40: playerDrop(); break; // Down (소프트 드롭)
         case 38: playerRotate(1); break; // Up (Rotate CW)
         case 90: playerRotate(-1); break; // Z (Rotate CCW)
@@ -580,7 +563,7 @@ document.addEventListener('keydown', event => {
 });
 document.getElementById('restart-btn').addEventListener('click', restartGame);
 
-// 보조 캔버스 그리기 함수 (Next/Hold)
+// 보조 캔버스 그리기 함수
 function drawMiniCanvas(ctx, pieceType) {
     ctx.fillStyle = '#333';
     ctx.fillRect(0, 0, 4, 4);
